@@ -4,6 +4,8 @@ The dataset includes features such as URL structure, server metadata, and TCP/IP
 The target variable is TYPE, where 1 denotes a malicious website and 0 indicates a benign one. Data preprocessing was performed using R, primarily with the caret package. Missing values were identified and handled through omission or imputation, and categorical variables such as CHARSET, SERVER, and WHOIS_COUNTRY were converted into factor types.
 Using the caret package in R, the dataset is then split into training (90%) and testing (10%) sets. Three machine learning models—Decision Tree, KNN, and Linear Regression—are trained on the training data. 
 
+Import the cvs file in Rstudio ( both base and read ) than run the code from txt file
+
 
 
 
