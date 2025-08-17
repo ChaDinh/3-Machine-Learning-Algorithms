@@ -1,0 +1,103 @@
+install.packages("caret")
+install.packages("rpart")
+install.packages("dplyr")
+install.packages("e1071")
+install.packages("kernlab")
+install.packages("kknn")
+library(kknn)
+library(kernlab)
+library(caret)
+library(rpart)
+library(e1071)
+library(dplyr)
+
+# ===== 1. Load Data =====
+data <- read.csv("malicious_and_benign_websites1.csv", stringsAsFactors = FALSE)
+
+# ===== 2. Ensure target variable is a factor and remove rows with NA target =====
+data <- data[!is.na(data$Type), ]
+data$Type <- as.factor(data$Type)
+
+# ===== 3. Fill missing values =====
+for (col in names(data)) {
+  if (col != "Type") {
+    if (is.numeric(data[[col]])) {
+      data[[col]][is.na(data[[col]])] <- median(data[[col]], na.rm = TRUE)
+    } else {
+      # For character columns, convert to factor first
+      data[[col]] <- as.character(data[[col]])
+      mode_val <- names(sort(table(data[[col]]), decreasing = TRUE))[1]
+      data[[col]][is.na(data[[col]])] <- mode_val
+      data[[col]] <- as.factor(data[[col]])}}}
+
+# ===== 4. Train/Test Split =====
+set.seed(123)
+trainIndex <- createDataPartition(data$Type, p = 0.9, list = FALSE)
+trainData <- data[trainIndex, ]
+testData  <- data[-trainIndex, ]
+
+# ===== 5. Align factor levels between train and test =====
+factor_cols <- sapply(trainData, is.factor)
+factor_cols <- names(factor_cols[factor_cols == TRUE])
+factor_cols <- setdiff(factor_cols, "Type")  # exclude target
+
+for (col in factor_cols) {
+  train_levels <- levels(trainData[[col]])
+  
+  # Add an "Unknown" level to train and test sets
+  levels(trainData[[col]]) <- c(train_levels, "Unknown")
+  
+  # For test, convert levels not in train levels to "Unknown"
+  testData[[col]] <- as.character(testData[[col]])
+  testData[[col]][!(testData[[col]] %in% train_levels)] <- "Unknown"
+  testData[[col]] <- factor(testData[[col]], levels = levels(trainData[[col]]))}
+
+# ===== 6. Final check and fill any NAs introduced by level alignment =====
+for (col in names(trainData)) {
+  if (is.numeric(trainData[[col]])) {
+    med_val <- median(trainData[[col]], na.rm = TRUE)
+    trainData[[col]][is.na(trainData[[col]])] <- med_val
+    testData[[col]][is.na(testData[[col]])]  <- med_val
+  } else if (is.factor(trainData[[col]])) {
+    most_common <- names(which.max(table(trainData[[col]])))
+    trainData[[col]][is.na(trainData[[col]])] <- most_common
+    testData[[col]][is.na(testData[[col]])]  <- most_common}}
+
+# ===== 7. Train Decision Tree Model =====
+set.seed(123)
+dt_model <- train(Type ~ ., data = trainData,
+                  method = "rpart",
+                  trControl = trainControl(method = "cv", number = 3))
+# ===== 7. Threshold tuning on test set =====
+# Get predicted probabilities for class "1" (malicious)
+dt_probs <- predict(dt_model, testData, type = "prob")[, "1"]
+
+# Define the threshold you want to test/change here:
+threshold <- 0.1 # <--- Change this value to tune threshold
+
+# Convert probabilities to predicted classes based on threshold
+dt_pred_threshold <- factor(ifelse(dt_probs >= threshold, "1", "0"),
+                           levels = levels(testData$Type))
+# Evaluate confusion matrix and stats at this threshold
+cat("\nDecision Tree with threshold =", threshold, ":\n")
+print(confusionMatrix(dt_pred_threshold, testData$Type, positive = "1"))
+
+
+set.seed(123)
+knn_model <- train(Type ~ ., data = trainData,
+                   method = "knn",
+                   preProcess = c("center", "scale"),
+                   trControl = trainControl(method = "cv", number = 3),
+                   tuneLength = 5)
+knn_preds <- predict(knn_model, testData)
+cat("\nK-Nearest Neighbors:\n")
+print(confusionMatrix(knn_preds, testData$Type, positive = "1"))
+
+set.seed(123)
+svm_model <- train(Type ~ ., data = trainData,
+                   method = "svmLinear",
+                   trControl = trainControl(method = "cv", number = 3),
+                   preProcess = c("center", "scale"))
+svm_preds <- predict(svm_model, testData)
+cat("\nLinear SVM:\n")
+print(confusionMatrix(svm_preds, testData$Type, positive = "1"))
